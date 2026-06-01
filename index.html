@@ -2562,7 +2562,12 @@
     }
 
     function filterBySelectedPeriod(items, field = 'criadoEm') {
-      return (items || []).filter(item => isInSelectedPeriod(item[field] || item.data || item.atualizadoEm));
+      if (DateState.allMonths) return items || [];
+      return (items || []).filter(item => {
+        const val = item[field] || item.data || item.atualizadoEm;
+        if (!val) return false;
+        return isInSelectedPeriod(val);
+      });
     }
 
     // Função central para atualizar todas as visualizações após mudança de mês/ano
@@ -2657,7 +2662,8 @@
     function renderAnalise() {
       if (!els.analiseContent) return;
       const registrosTodos = filterBySelectedPeriod(_registrosCache, 'data');
-      const registros = registrosTodos.filter(r => r.status === 'finalizado');
+      // Finalizados: considerar pelo mês de finalização, não de criação
+      const registros = filterBySelectedPeriod(_registrosCache, 'dataFinalizacao').filter(r => r.status === 'finalizado');
       const historico = AppState.cache.historico || [];
 
       if (registrosTodos.length === 0) {
@@ -4432,7 +4438,8 @@
     function renderOrcamentosLista() {
       if (!els.listaHistoricoOrcamentos) return;
       els.listaHistoricoOrcamentos.innerHTML = "";
-      const historicoTodos = AppState.cache.historico || [];
+      // Filtrar pelo mês/ano selecionado (usa campo 'data' do orçamento)
+      const historicoTodos = filterBySelectedPeriod(AppState.cache.historico || [], 'data');
       if (historicoTodos.length === 0) {
         els.listaHistoricoOrcamentos.innerHTML = '<div class="empty-state">Nenhum orçamento salvo</div>';
         const infoEl = document.getElementById('historicoSearchInfo');
@@ -4472,7 +4479,7 @@
             ? 'Nenhum resultado encontrado.'
             : `${historico.length} de ${historicoTodos.length} orçamento(s) encontrado(s).`;
         } else {
-          infoEl.textContent = `${historicoTodos.length} orçamento(s) no total.`;
+          infoEl.textContent = historicoTodos.length > 0 ? `${historicoTodos.length} orçamento(s) no período.` : '';
         }
       }
 
@@ -5561,8 +5568,12 @@ ${linhasServicos}---------------------
     // Função auxiliar para renderizar uma página de status com filtro
     function renderStatusPage(status, listEl, countEl, totalEl, registrosFiltradosGlobal) {
       if (!listEl) return;
-      const registrosFiltrados = registrosFiltradosGlobal || filterBySelectedPeriod(_registrosCache, 'data');
-      const filtered = registrosFiltrados.filter(r => r.status === status);
+      // Registros não finalizados aparecem sempre (independente do mês selecionado)
+      // para que o usuário não os perca ao navegar entre meses
+      const baseList = (status !== 'finalizado')
+        ? _registrosCache
+        : (registrosFiltradosGlobal || filterBySelectedPeriod(_registrosCache, 'dataFinalizacao'));
+      const filtered = baseList.filter(r => r.status === status);
       listEl.innerHTML = '';
       if (filtered.length === 0) {
         listEl.innerHTML = `<div class="empty-state">Nenhum registro</div>`;
@@ -5586,8 +5597,8 @@ ${linhasServicos}---------------------
       const infoEl  = document.getElementById('finalizadoSearchInfo');
       if (!listEl) return;
 
-      // Fonte de dados: mesmo filtro de período do sistema
-      const todos = filterBySelectedPeriod(_registrosCache, 'data')
+      // Finalizados: filtrar pelo mês em que foram finalizados (dataFinalizacao), não pela data de criação
+      const todos = filterBySelectedPeriod(_registrosCache, 'dataFinalizacao')
                       .filter(r => r.status === 'finalizado');
 
       // Ler termo do input — igual ao historicoSearchInput
@@ -5645,20 +5656,23 @@ ${linhasServicos}---------------------
     // Atualiza todas as páginas de status e os cards da dashboard
     function updateAllStatusAndDashboard() {
       const registrosFiltrados = filterBySelectedPeriod(_registrosCache, 'data');
-      renderStatusPage('servico', document.getElementById('listaStatusServico'), document.getElementById('statusServicoCount'), document.getElementById('statusServicoTotal'), registrosFiltrados);
-      renderStatusPage('parado', document.getElementById('listaStatusParado'), document.getElementById('statusParadoCount'), document.getElementById('statusParadoTotal'), registrosFiltrados);
-      renderStatusPage('pronto', document.getElementById('listaStatusPronto'), document.getElementById('statusProntoCount'), document.getElementById('statusProntoTotal'), registrosFiltrados);
+      // Para status não finalizados: usa TODOS os registros (independente de mês)
+      renderStatusPage('servico', document.getElementById('listaStatusServico'), document.getElementById('statusServicoCount'), document.getElementById('statusServicoTotal'), _registrosCache);
+      renderStatusPage('parado', document.getElementById('listaStatusParado'), document.getElementById('statusParadoCount'), document.getElementById('statusParadoTotal'), _registrosCache);
+      renderStatusPage('pronto', document.getElementById('listaStatusPronto'), document.getElementById('statusProntoCount'), document.getElementById('statusProntoTotal'), _registrosCache);
       renderFinalizadosLista(); // usa filtro de busca se houver termo digitado
       
       // Atualizar os cards da dashboard
+      // Não finalizados: contagem total (todos os meses)
+      // Finalizados: contagem do mês selecionado (pela dataFinalizacao)
       const sv = document.querySelector('.status-mini-card.status-servico .status-mini-value');
       const pv = document.querySelector('.status-mini-card.status-parado .status-mini-value');
       const rv = document.querySelector('.status-mini-card.status-pronto .status-mini-value');
       const fv = document.querySelector('.status-mini-card.status-finalizado .status-mini-value');
-      if (sv) sv.textContent = registrosFiltrados.filter(r=>r.status==='servico').length;
-      if (pv) pv.textContent = registrosFiltrados.filter(r=>r.status==='parado').length;
-      if (rv) rv.textContent = registrosFiltrados.filter(r=>r.status==='pronto').length;
-      if (fv) fv.textContent = registrosFiltrados.filter(r=>r.status==='finalizado').length;
+      if (sv) sv.textContent = _registrosCache.filter(r=>r.status==='servico').length;
+      if (pv) pv.textContent = _registrosCache.filter(r=>r.status==='parado').length;
+      if (rv) rv.textContent = _registrosCache.filter(r=>r.status==='pronto').length;
+      if (fv) fv.textContent = filterBySelectedPeriod(_registrosCache, 'dataFinalizacao').filter(r=>r.status==='finalizado').length;
     }
 
     // _registrosCache e _editingRegId declarados antes de renderAnalise
@@ -6409,14 +6423,44 @@ ${linhasServicos}---------------------
         });
       }
 
+      // Data de hoje formatada como YYYY-MM-DD (para o campo 'data' do registro)
+      const hoje = new Date();
+      const hojeISO = hoje.toISOString();
+      const hojeData = hoje.toISOString().slice(0, 10); // YYYY-MM-DD
+
       try {
-        const docRef = doc(db, 'usuarios', AppState.user.uid, 'registros', _aprovRegId);
+        const uid = AppState.user.uid;
+
+        // ── Se há orçamento vinculado, criar cópia com a data de hoje ──
+        if (orc && orc.id) {
+          try {
+            const orcAtualizado = {
+              ...orc,
+              data: hojeISO,
+              criadoEm: orc.criadoEm || orc.data || hojeISO,
+              atualizadoEm: hojeISO,
+              dataFinalizacao: hojeISO,
+              // Preserva os dados originais mas registra que foi finalizado hoje
+              dataOriginal: orc.data || orc.criadoEm || hojeISO
+            };
+            // Remove o campo 'id' que não deve ir para o Firestore como campo
+            delete orcAtualizado.id;
+            await setDoc(doc(db, 'usuarios', uid, 'historico', orc.id), orcAtualizado);
+          } catch(eOrc) {
+            console.warn('Não foi possível atualizar a data do orçamento:', eOrc);
+          }
+        }
+
+        // ── Finalizar o registro com a data de hoje ──
+        const docRef = doc(db, 'usuarios', uid, 'registros', _aprovRegId);
         await setDoc(docRef, {
           status: 'finalizado',
+          data: hojeData, // contabiliza no mês atual
           servicosAprovados: idxSelecionados,
           servicosAprovadosNomes: servicosAprovados.map(s => s.descricaoBase || s.descricao || s.nome || ''),
           complementar: valorComplementar > 0 ? valorComplementar : (reg.complementar || 0),
-          dataFinalizacao: new Date().toISOString()
+          dataFinalizacao: hojeISO,
+          dataOriginal: reg.dataOriginal || reg.data || hojeData // preserva data original
         }, { merge: true });
         showStatus('OS finalizada com sucesso! 🏁');
         window.fecharAprovModal();
